@@ -11,8 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
-gtfs-data/
-public/gtfs/ttc-index.json
+# Raw extracted GTFS txt files are huge; keep zip + built index only
+gtfs-data/*
+!gtfs-data/README.md
+!gtfs-data/ttc.zip
 
 # Editor directories and files
 .vscode/*
