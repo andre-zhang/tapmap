@@ -12,7 +12,7 @@ export async function loadGtfsIndex(): Promise<GtfsFeedIndex | null> {
 
   loadPromise = (async () => {
     try {
-      const res = await fetch('/gtfs/ttc-index.json')
+      const res = await fetch(`${import.meta.env.BASE_URL}gtfs/ttc-index.json`)
       if (!res.ok) return null
       cached = (await res.json()) as GtfsFeedIndex
       cached.tokenIndex = buildTokenIndex(cached)

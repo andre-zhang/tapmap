@@ -32,6 +32,7 @@ export type PrestoTransaction = {
   agency: string
   location: string
   transactionType: string
+  timestamp: number | null
 }
 
 export type GeocodedLocation = {

@@ -16,7 +16,6 @@ const ALL_PLACE_TYPES = Object.keys(PLACE_TYPE_LABELS) as PlaceType[]
 export default function App() {
   const [trips, setTrips] = useState<Trip[]>([])
   const [gtfsIndex, setGtfsIndex] = useState<GtfsFeedIndex | null>(null)
-  const [gtfsReady, setGtfsReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState<GeocodeProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -28,30 +27,29 @@ export default function App() {
   useEffect(() => {
     loadGtfsIndex().then((index) => {
       setGtfsIndex(index)
-      setGtfsReady(Boolean(index))
     })
   }, [])
 
-  useEffect(() => {
-    if (!gtfsIndex) return
-    setTrips((current) => (current.length > 0 ? enrichTripsWithGtfs(current, gtfsIndex) : current))
-  }, [gtfsIndex])
+  const mappedTrips = useMemo(
+    () => (gtfsIndex ? enrichTripsWithGtfs(trips, gtfsIndex) : trips),
+    [gtfsIndex, trips],
+  )
 
-  const dates = useMemo(() => uniqueDates(trips), [trips])
+  const dates = useMemo(() => uniqueDates(mappedTrips), [mappedTrips])
 
   const originTypesInData = useMemo(() => {
     const set = new Set<PlaceType>()
-    for (const trip of trips) set.add(trip.originPlaceType)
+    for (const trip of mappedTrips) set.add(trip.originPlaceType)
     return ALL_PLACE_TYPES.filter((t) => set.has(t))
-  }, [trips])
+  }, [mappedTrips])
 
   const filteredTrips = useMemo(() => {
-    return trips.filter((trip) => {
+    return mappedTrips.filter((trip) => {
       if (selectedDate !== 'all' && trip.date !== selectedDate) return false
       if (!selectedOriginTypes.has(trip.originPlaceType)) return false
       return true
     })
-  }, [trips, selectedDate, selectedOriginTypes])
+  }, [mappedTrips, selectedDate, selectedOriginTypes])
 
   const stopCount = useMemo(
     () => filteredTrips.reduce((n, t) => n + t.stops.length, 0),
@@ -67,7 +65,9 @@ export default function App() {
       try {
         const transactions = parsePrestoCsv(text)
         if (transactions.length === 0) {
-          throw new Error('No travel taps found in that CSV.')
+          throw new Error(
+            'No travel taps found. Export Transaction History as CSV from prestocard.ca (Date, Transit Agency, Location, Type).',
+          )
         }
 
         const rawTrips = buildTrips(transactions)
@@ -86,8 +86,16 @@ export default function App() {
   )
 
   const loadSample = useCallback(async () => {
-    const res = await fetch('/sample-presto.csv')
-    await handleFile(await res.text())
+    try {
+      setError(null)
+      const res = await fetch(`${import.meta.env.BASE_URL}sample-presto.csv`)
+      if (!res.ok) {
+        throw new Error('Could not load sample data. Try importing your own PRESTO CSV.')
+      }
+      await handleFile(await res.text())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load sample data')
+    }
   }, [handleFile])
 
   const toggleOriginType = (type: PlaceType) => {
@@ -102,29 +110,27 @@ export default function App() {
   const progressPct =
     progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
 
-  const busy = loading || !gtfsReady
-
   return (
     <div className="app">
       <header className="top-bar">
         <h1 className="brand">PRESTO TAP MAP</h1>
         <div className="top-actions">
-          <CsvUploader onFile={handleFile} loading={busy} />
-          <button type="button" className="comic-btn" onClick={loadSample} disabled={busy}>
+          <CsvUploader onFile={handleFile} onError={setError} loading={loading} label="IMPORT" />
+          <button type="button" className="comic-btn" onClick={() => void loadSample()} disabled={loading}>
             Sample
           </button>
         </div>
       </header>
 
-      {loading && progress && (
+      {loading && progress ? (
         <div className="progress-bar" role="status">
           <div className="progress-fill" style={{ width: `${progressPct}%` }} />
         </div>
-      )}
+      ) : null}
 
-      {error && <div className="error-banner">{error}</div>}
+      {error ? <div className="error-banner">{error}</div> : null}
 
-      {trips.length > 0 ? (
+      {mappedTrips.length > 0 ? (
         <main className="workspace">
           <FilterPanel
             dates={dates}
@@ -138,12 +144,16 @@ export default function App() {
           />
           <PrestoMap trips={filteredTrips} />
         </main>
-      ) : (
-        !busy && (
-          <section className="empty-state">
+      ) : loading ? null : (
+          <CsvUploader
+            onFile={handleFile}
+            onError={setError}
+            loading={loading}
+            className="empty-state"
+          >
             <span className="empty-burst">IMPORT!</span>
-          </section>
-        )
+            <span className="empty-hint">Drop a PRESTO CSV here, or use Import above</span>
+          </CsvUploader>
       )}
     </div>
   )
