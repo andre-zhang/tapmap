@@ -11,9 +11,7 @@ export function classifyPlaceType(location: string, agency: string): PlaceType {
   if (/^\d{4,6}$/.test(trimmed)) return 'bus_stop'
 
   if (isKnownTrainStation(trimmed) || TRAIN_AGENCY.test(agency)) {
-    if (isKnownTrainStation(trimmed) || /pearson|mount\s*der|union/i.test(trimmed)) {
-      return 'train_station'
-    }
+    return 'train_station'
   }
 
   if (isKnownSubwayStation(trimmed) || (SUBWAY_AGENCY.test(agency) && /^[A-Z][A-Z0-9\s]{2,}$/.test(trimmed))) {
