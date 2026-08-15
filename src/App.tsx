@@ -66,7 +66,7 @@ export default function App() {
         const transactions = parsePrestoCsv(text)
         if (transactions.length === 0) {
           throw new Error(
-            'No travel taps found. Export Transaction History as CSV from prestocard.ca (Date, Transit Agency, Location, Type).',
+            'No travel taps found in that CSV. Use a prestocard.ca Transaction History export (Date, Sequence Number, Service Provider Name, Location, Type). Dates like "30 July 2026 11:43 a.m." are supported.',
           )
         }
 

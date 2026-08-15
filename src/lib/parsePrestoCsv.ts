@@ -223,6 +223,10 @@ function mapColumns(headers: string[]): ColumnMap | null {
 }
 
 function positionalMap(cells: string[]): ColumnMap {
+  // Current prestocard.ca: Date, Sequence Number, Service Provider Name, Location, Type, ...
+  if (cells.length >= 8) {
+    return { date: 0, time: -1, sequence: 1, agency: 2, location: 3, type: 4 }
+  }
   if (cells.length >= 6) {
     return { date: 0, time: -1, sequence: 2, agency: 3, location: 4, type: 5 }
   }
@@ -270,10 +274,19 @@ function rowToTransaction(row: string[], columns: ColumnMap, rowIndex: number): 
 
 export function parsePrestoCsv(text: string): PrestoTransaction[] {
   const cleaned = stripBom(text).split('\0').join('')
-  const result = Papa.parse<string[]>(cleaned, {
+  let result = Papa.parse<string[]>(cleaned, {
     skipEmptyLines: 'greedy',
-    delimitersToGuess: [',', '\t', ';', '|'],
+    delimiter: ',',
   })
+  const looksSingleColumn =
+    result.data.length > 0 &&
+    result.data.every((row) => row.filter((value) => value?.trim()).length <= 1)
+  if (looksSingleColumn) {
+    result = Papa.parse<string[]>(cleaned, {
+      skipEmptyLines: 'greedy',
+      delimitersToGuess: [',', '\t', ';', '|'],
+    })
+  }
   const rows = result.data.filter((row) => row.some((value) => value?.trim()))
   if (rows.length === 0) return []
 
