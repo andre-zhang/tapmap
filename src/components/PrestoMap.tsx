@@ -11,11 +11,10 @@ import {
 import type { LatLngExpression, LatLngTuple } from 'leaflet'
 import type { Trip } from '../types'
 import { buildMapLayers, shouldShowStop, stopMarkerRadius } from '../lib/mapLayers'
-import 'leaflet/dist/leaflet.css'
 
-const OSM_TILES = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+const CARTO_TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
 const ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors · <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>'
 
 function FitBounds({ points }: { points: LatLngTuple[] }) {
   const map = useMap()
@@ -79,7 +78,7 @@ export default function PrestoMap({ trips }: PrestoMapProps) {
         scrollWheelZoom
         preferCanvas
       >
-        <TileLayer url={OSM_TILES} attribution={ATTRIBUTION} />
+        <TileLayer url={CARTO_TILES} attribution={ATTRIBUTION} />
         <MapZoomTracker onZoom={setZoom} />
         <FitBounds points={boundsPoints} />
 
@@ -137,12 +136,12 @@ export default function PrestoMap({ trips }: PrestoMapProps) {
         })}
       </MapContainer>
 
-      {trips.length > 0 && (
+      {trips.length > 0 ? (
         <div className="map-legend">
           {trips.length} trips · {stops.length} stops
-          {zoom < 13 && stops.length > 40 && ' · zoom in for all stops'}
+          {zoom < 13 && stops.length > 40 ? ' · zoom in for all stops' : ''}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

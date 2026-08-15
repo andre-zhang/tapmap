@@ -1,8 +1,8 @@
 import Papa from 'papaparse'
 import type { PrestoTransaction } from '../types'
 
-const TRAVEL_TYPES = /fare\s*pay|free\s*trans|tap\s*on|tap\s*off/i
-const SKIP_TYPES = /load\s*amou|auto\s*load|refund|adjustment/i
+const TRAVEL_TYPES = /fare\s*pay|free\s*trans|\btransfer\b|tap\s*on|tap\s*off|default\s*fare/i
+const SKIP_TYPES = /load\s*amou|auto\s*load|refund|adjustment|pass\s*purchase|monthly\s*pass/i
 
 const MONTHS: Record<string, number> = {
   january: 0,
@@ -31,91 +31,300 @@ const MONTHS: Record<string, number> = {
   dec: 11,
 }
 
-function parsePrestoDate(raw: string): { iso: string; label: string } | null {
-  const label = raw.trim()
-  if (!label) return null
+const DATE_HEADERS = ['date', 'transaction date', 'tap date', 'datetime', 'date time']
+const TIME_HEADERS = ['time', 'tap time', 'transaction time']
+const AGENCY_HEADERS = [
+  'agency',
+  'transit agency',
+  'service provider name',
+  'service provider',
+  'provider name',
+  'operator',
+  'transit operator',
+  'provider',
+]
+const LOCATION_HEADERS = ['location', 'stop', 'station', 'stop name', 'tap location', 'stop location']
+const TYPE_HEADERS = ['transaction type', 'type', 'transaction', 'activity', 'desc', 'description']
+const SEQUENCE_HEADERS = ['sequence number', 'sequence', 'seq', 'order']
 
-  const match = label.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{2,4})$/)
+export class PrestoCsvError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PrestoCsvError'
+  }
+}
+
+type ColumnMap = {
+  date: number
+  time: number
+  agency: number
+  location: number
+  type: number
+  sequence: number
+}
+
+type ParsedDate = {
+  iso: string
+  label: string
+  timestamp: number | null
+}
+
+function stripBom(text: string): string {
+  if (text.charCodeAt(0) === 0xfeff) return text.slice(1)
+  return text
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+function normalizeHeader(value: string): string {
+  return value.replace(/^\uFEFF/, '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function findColumn(headers: string[], aliases: string[]): number {
+  const normalized = headers.map(normalizeHeader)
+  for (const alias of aliases) {
+    const exact = normalized.indexOf(alias)
+    if (exact >= 0) return exact
+  }
+  for (const alias of aliases) {
+    const partial = normalized.findIndex(
+      (header) =>
+        header === alias ||
+        header.startsWith(`${alias} `) ||
+        header.endsWith(` ${alias}`) ||
+        (alias.length >= 6 && header.includes(alias)),
+    )
+    if (partial >= 0) return partial
+  }
+  return -1
+}
+
+function normalizeMeridiem(value: string): string {
+  return value.replace(/\b([ap])\s*\.?\s*m\.?/gi, (_, letter: string) => `${letter.toUpperCase()}M`)
+}
+
+function parseTime(raw: string | undefined): { h: number; m: number; s: number } | null {
+  if (!raw) return null
+  const match = raw.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([AaPp])\.?[Mm]\.?)?$/)
   if (!match) return null
 
-  const day = Number(match[1])
-  const monthKey = match[2].toLowerCase()
-  const month = MONTHS[monthKey]
-  if (month === undefined) return null
+  let hour = Number(match[1])
+  const minute = Number(match[2])
+  const second = Number(match[3] ?? 0)
+  const ampm = match[4]
 
-  let year = Number(match[3])
-  if (year < 100) year += 2000
-  if (year < 1000) year += 2000
+  if (ampm) {
+    const pm = ampm.toLowerCase() === 'p'
+    if (pm && hour < 12) hour += 12
+    if (!pm && hour === 12) hour = 0
+  }
 
-  const date = new Date(Date.UTC(year, month, day))
+  if (hour > 23 || minute > 59 || second > 59) return null
+  return { h: hour, m: minute, s: second }
+}
+
+function finishDate(year: number, month: number, day: number, time: { h: number; m: number; s: number } | null, raw: string): ParsedDate | null {
+  let resolvedYear = year
+  if (resolvedYear < 100) resolvedYear += 2000
+  if (month < 0 || month > 11 || day < 1 || day > 31) return null
+
+  const hours = time?.h ?? 12
+  const minutes = time?.m ?? 0
+  const seconds = time?.s ?? 0
+  const date = new Date(resolvedYear, month, day, hours, minutes, seconds)
   if (Number.isNaN(date.getTime())) return null
+  if (date.getMonth() !== month || date.getDate() !== day) return null
 
-  return { iso: date.toISOString().slice(0, 10), label }
+  return {
+    iso: `${resolvedYear}-${pad(month + 1)}-${pad(day)}`,
+    label: raw.trim(),
+    timestamp: time ? date.getTime() : null,
+  }
+}
+
+export function parsePrestoDate(raw: string): ParsedDate | null {
+  const label = normalizeMeridiem(raw.trim())
+  if (!label) return null
+
+  const dayMonthYear = label.match(
+    /^(\d{1,2})\s+([A-Za-z]+)\.?\s+(\d{2,4})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp]\.?[Mm]\.?)?))?$/,
+  )
+  if (dayMonthYear) {
+    const month = MONTHS[dayMonthYear[2].toLowerCase()]
+    if (month === undefined) return null
+    return finishDate(Number(dayMonthYear[3]), month, Number(dayMonthYear[1]), parseTime(dayMonthYear[4]), raw)
+  }
+
+  const monthDayYear = label.match(
+    /^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{2,4})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp]\.?[Mm]\.?)?))?$/,
+  )
+  if (monthDayYear) {
+    const month = MONTHS[monthDayYear[1].toLowerCase()]
+    if (month === undefined) return null
+    return finishDate(Number(monthDayYear[3]), month, Number(monthDayYear[2]), parseTime(monthDayYear[4]), raw)
+  }
+
+  const iso = label.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?)?/)
+  if (iso) {
+    return finishDate(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), parseTime(iso[4]), raw)
+  }
+
+  const slash = label.match(
+    /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp]\.?[Mm]\.?)?))?$/,
+  )
+  if (slash) {
+    // PRESTO website exports use US M/D/YYYY.
+    return finishDate(Number(slash[3]), Number(slash[1]) - 1, Number(slash[2]), parseTime(slash[4]), raw)
+  }
+
+  return null
 }
 
 function isHeaderRow(cells: string[]): boolean {
-  const joined = cells.join(' ').toLowerCase()
-  return joined.includes('date') && (joined.includes('location') || joined.includes('transaction'))
+  const headers = cells.map(normalizeHeader)
+  const joined = headers.join(' ')
+  const hasDate = headers.some((h) => DATE_HEADERS.includes(h) || h.includes('date'))
+  const hasLocation = headers.some((h) => LOCATION_HEADERS.includes(h))
+  const hasType = headers.some((h) => TYPE_HEADERS.includes(h) || h.includes('type') || h.includes('transaction'))
+  const hasAgency = headers.some(
+    (h) => AGENCY_HEADERS.includes(h) || h.includes('agency') || h.includes('provider'),
+  )
+  return hasDate && (hasLocation || (hasType && hasAgency) || joined.includes('transaction'))
 }
 
-function rowToTransaction(cells: string[], rowIndex: number): PrestoTransaction | null {
-  const nonEmpty = cells.map((c) => c.trim()).filter(Boolean)
-  if (nonEmpty.length < 4) return null
+function looksLikeUsageReport(headers: string[]): boolean {
+  const location = findColumn(headers, LOCATION_HEADERS)
+  const type = findColumn(headers, TYPE_HEADERS)
+  const agency = findColumn(headers, AGENCY_HEADERS)
+  const date = findColumn(headers, DATE_HEADERS)
+  return date >= 0 && agency >= 0 && type >= 0 && location < 0
+}
 
-  let dateRaw: string
-  let sequence: number
-  let agency: string
-  let location: string
-  let transactionType: string
+function mapColumns(headers: string[]): ColumnMap | null {
+  const date = findColumn(headers, DATE_HEADERS)
+  const time = findColumn(headers, TIME_HEADERS)
+  const agency = findColumn(headers, AGENCY_HEADERS)
+  const location = findColumn(headers, LOCATION_HEADERS)
+  const type = findColumn(headers, TYPE_HEADERS)
+  const sequence = findColumn(headers, SEQUENCE_HEADERS)
 
+  if (date < 0 || location < 0 || type < 0) return null
+
+  return {
+    date,
+    time,
+    agency: agency >= 0 ? agency : -1,
+    location,
+    type,
+    sequence,
+  }
+}
+
+function positionalMap(cells: string[]): ColumnMap {
+  // Current prestocard.ca: Date, Sequence Number, Service Provider Name, Location, Type, ...
+  if (cells.length >= 8) {
+    return { date: 0, time: -1, sequence: 1, agency: 2, location: 3, type: 4 }
+  }
   if (cells.length >= 6) {
-    dateRaw = cells[0]?.trim() ?? ''
-    sequence = Number(cells[2]?.trim() ?? cells[1]?.trim() ?? rowIndex)
-    agency = cells[3]?.trim() ?? ''
-    location = cells[4]?.trim() ?? ''
-    transactionType = cells[5]?.trim() ?? ''
-  } else {
-    dateRaw = cells[0]?.trim() ?? ''
-    sequence = Number(cells[1]?.trim() ?? rowIndex)
-    agency = cells[2]?.trim() ?? ''
-    location = cells[3]?.trim() ?? ''
-    transactionType = cells[4]?.trim() ?? ''
+    return { date: 0, time: -1, sequence: 2, agency: 3, location: 4, type: 5 }
+  }
+  return { date: 0, time: -1, sequence: 1, agency: 2, location: 3, type: 4 }
+}
+
+function cell(row: string[], index: number): string {
+  if (index < 0) return ''
+  return (row[index] ?? '').trim()
+}
+
+function rowToTransaction(row: string[], columns: ColumnMap, rowIndex: number): PrestoTransaction | null {
+  let dateRaw = cell(row, columns.date)
+  const timeRaw = cell(row, columns.time)
+  if (timeRaw && !/\d{1,2}:\d{2}/.test(dateRaw)) {
+    dateRaw = `${dateRaw} ${timeRaw}`
   }
 
   const parsedDate = parsePrestoDate(dateRaw)
   if (!parsedDate) return null
 
-  const type = transactionType.trim()
-  if (!type || SKIP_TYPES.test(type)) return null
-  if (!TRAVEL_TYPES.test(type)) return null
-  if (!location.trim()) return null
+  const transactionType = cell(row, columns.type)
+  if (!transactionType || SKIP_TYPES.test(transactionType)) return null
+  if (!TRAVEL_TYPES.test(transactionType)) return null
+
+  const location = cell(row, columns.location)
+  if (!location) return null
+
+  const sequenceRaw = columns.sequence >= 0 ? Number(cell(row, columns.sequence)) : NaN
+  const sequence = Number.isFinite(sequenceRaw)
+    ? sequenceRaw
+    : parsedDate.timestamp ?? rowIndex
 
   return {
     id: `${parsedDate.iso}-${sequence}-${rowIndex}`,
     date: parsedDate.iso,
     dateLabel: parsedDate.label,
-    sequence: Number.isFinite(sequence) ? sequence : rowIndex,
-    agency: agency.trim(),
-    location: location.trim(),
-    transactionType: type,
+    sequence,
+    agency: cell(row, columns.agency),
+    location,
+    transactionType,
+    timestamp: parsedDate.timestamp,
   }
 }
 
 export function parsePrestoCsv(text: string): PrestoTransaction[] {
-  const result = Papa.parse<string[]>(text, { skipEmptyLines: true })
-  const rows = result.data.filter((row) => row.some((cell) => cell?.trim()))
+  const cleaned = stripBom(text).split('\0').join('')
+  let result = Papa.parse<string[]>(cleaned, {
+    skipEmptyLines: 'greedy',
+    delimiter: ',',
+  })
+  const looksSingleColumn =
+    result.data.length > 0 &&
+    result.data.every((row) => row.filter((value) => value?.trim()).length <= 1)
+  if (looksSingleColumn) {
+    result = Papa.parse<string[]>(cleaned, {
+      skipEmptyLines: 'greedy',
+      delimitersToGuess: [',', '\t', ';', '|'],
+    })
+  }
+  const rows = result.data.filter((row) => row.some((value) => value?.trim()))
   if (rows.length === 0) return []
 
-  const startIndex = isHeaderRow(rows[0]) ? 1 : 0
-  const transactions: PrestoTransaction[] = []
+  let headerIndex = -1
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    if (isHeaderRow(rows[i])) {
+      headerIndex = i
+      break
+    }
+  }
 
+  let columns: ColumnMap
+  let startIndex = 0
+
+  if (headerIndex >= 0) {
+    const headers = rows[headerIndex]
+    if (looksLikeUsageReport(headers)) {
+      throw new PrestoCsvError(
+        'This looks like a Transit Usage Report (no stop locations). On prestocard.ca export Transaction History, not the tax usage report.',
+      )
+    }
+    columns = mapColumns(headers) ?? positionalMap(headers)
+    startIndex = headerIndex + 1
+  } else {
+    columns = positionalMap(rows[0])
+  }
+
+  const transactions: PrestoTransaction[] = []
   for (let i = startIndex; i < rows.length; i++) {
-    const tx = rowToTransaction(rows[i], i)
+    const tx = rowToTransaction(rows[i], columns, i)
     if (tx) transactions.push(tx)
   }
 
   return transactions.sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date)
+    if (a.timestamp != null && b.timestamp != null && a.timestamp !== b.timestamp) {
+      return a.timestamp - b.timestamp
+    }
     return a.sequence - b.sequence
   })
 }

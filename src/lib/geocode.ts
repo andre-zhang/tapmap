@@ -6,7 +6,7 @@ import type { GeocodeProgress, GeocodedLocation, Trip } from '../types'
 import { classifyPlaceType } from './classifyPlace'
 import { lookupStation } from './stationLookup'
 
-const CACHE_KEY = 'presto-map-geocode-cache-v2'
+const CACHE_KEY = 'presto-map-geocode-cache-v3'
 const NOMINATIM_DELAY_MS = 1100
 
 type Cache = Record<string, GeocodedLocation>
@@ -38,11 +38,14 @@ async function nominatimSearch(query: string): Promise<GeocodedLocation | null> 
   url.searchParams.set('format', 'json')
   url.searchParams.set('limit', '1')
   url.searchParams.set('countrycodes', 'ca')
-  url.searchParams.set('viewbox', '-79.85,43.58,-79.05,43.95')
-  url.searchParams.set('bounded', '1')
+  // Bias toward the GTHA without excluding GO / 905 stops outside Toronto.
+  url.searchParams.set('viewbox', '-80.15,43.20,-78.70,44.35')
+  url.searchParams.set('bounded', '0')
 
   const res = await fetch(url.toString(), {
-    headers: { Accept: 'application/json' },
+    headers: {
+      Accept: 'application/json',
+    },
   })
   if (!res.ok) return null
 
@@ -69,7 +72,10 @@ function buildNominatimQuery(location: string, agency: string): string {
   if (/union\s*pea/i.test(agency)) {
     return `${location}, Union Pearson Express, Toronto`
   }
-  return `${location}, Toronto, Ontario`
+  if (/go\s*transit|metrolinx/i.test(agency)) {
+    return `${location}, GO Transit, Ontario`
+  }
+  return `${location}, Ontario, Canada`
 }
 
 function geocodeFromGtfs(
@@ -91,19 +97,17 @@ function geocodeFromGtfs(
     }
   }
 
-  if (/union\s*pea/i.test(agency)) {
-    const known = lookupStation(location)
-    if (known) {
-      return {
-        stopId: null,
-        geocoded: {
-          location,
-          lat: known.lat,
-          lng: known.lng,
-          placeType: known.placeType,
-          displayName: known.label,
-        },
-      }
+  const known = lookupStation(location)
+  if (known) {
+    return {
+      stopId: null,
+      geocoded: {
+        location,
+        lat: known.lat,
+        lng: known.lng,
+        placeType: known.placeType,
+        displayName: known.label,
+      },
     }
   }
 
@@ -127,6 +131,19 @@ export async function geocodeLocation(
   }
 
   if (cache[key]) return cache[key]
+
+  const known = lookupStation(location)
+  if (known) {
+    const entry: GeocodedLocation = {
+      location,
+      lat: known.lat,
+      lng: known.lng,
+      placeType: known.placeType,
+      displayName: known.label,
+    }
+    cache[key] = entry
+    return entry
+  }
 
   const placeType = classifyPlaceType(location, agency)
   const query = buildNominatimQuery(location, agency)
@@ -185,19 +202,17 @@ function attachGtfsAndLegs(trip: Trip, gtfs: GtfsFeedIndex | null): Trip {
       }
     }
 
-    if (/union\s*pea/i.test(stop.transaction.agency)) {
-      const known = lookupStation(stop.transaction.location)
-      if (known) {
-        return {
-          ...stop,
-          geocoded: {
-            location: stop.transaction.location,
-            lat: known.lat,
-            lng: known.lng,
-            placeType: known.placeType,
-            displayName: known.label,
-          },
-        }
+    const known = lookupStation(stop.transaction.location)
+    if (known) {
+      return {
+        ...stop,
+        geocoded: {
+          location: stop.transaction.location,
+          lat: known.lat,
+          lng: known.lng,
+          placeType: known.placeType,
+          displayName: known.label,
+        },
       }
     }
 
@@ -248,6 +263,20 @@ export async function geocodeTrips(
     const fromGtfs = gtfs ? geocodeFromGtfs(location, agency, gtfs) : null
     if (fromGtfs) {
       cache[key] = fromGtfs.geocoded
+      continue
+    }
+
+    if (cache[key]) continue
+
+    const known = lookupStation(location)
+    if (known) {
+      cache[key] = {
+        location,
+        lat: known.lat,
+        lng: known.lng,
+        placeType: known.placeType,
+        displayName: known.label,
+      }
       continue
     }
 

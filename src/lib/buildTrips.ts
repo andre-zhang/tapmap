@@ -1,7 +1,24 @@
 import type { PrestoTransaction, Trip, TripStop } from '../types'
 import { classifyPlaceType } from './classifyPlace'
 
-const TRIP_START = /fare\s*pay|tap\s*on/i
+const TRIP_START = /fare\s*pay|tap\s*on|default\s*fare/i
+const TAP_ON = /tap\s*on/i
+const TAP_OFF = /tap\s*off/i
+const TRANSFER_WINDOW_MS = 2 * 60 * 60 * 1000
+
+function startsNewTrip(tx: PrestoTransaction, previous: PrestoTransaction | null): boolean {
+  if (!previous) return true
+
+  if (tx.timestamp != null && previous.timestamp != null) {
+    if (tx.timestamp - previous.timestamp > TRANSFER_WINDOW_MS) return true
+    if (TAP_ON.test(tx.transactionType) && TAP_OFF.test(previous.transactionType)) return true
+    // Official PRESTO often records every TTC boarding as "Fare Payment".
+    // Keep taps in the same 2-hour window on one trip so map links draw.
+    return false
+  }
+
+  return TRIP_START.test(tx.transactionType)
+}
 
 export function buildTrips(transactions: PrestoTransaction[]): Trip[] {
   const trips: Trip[] = []
@@ -26,10 +43,11 @@ export function buildTrips(transactions: PrestoTransaction[]): Trip[] {
   }
 
   for (const tx of transactions) {
-    if (TRIP_START.test(tx.transactionType)) {
+    const previous = current[current.length - 1] ?? null
+    if (startsNewTrip(tx, previous)) {
       flush()
       current = [tx]
-    } else if (current.length > 0) {
+    } else {
       current.push(tx)
     }
   }

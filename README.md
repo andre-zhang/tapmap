@@ -5,7 +5,6 @@ Map your PRESTO card tap history onto **OpenStreetMap**. Import a transaction CS
 ## Run locally
 
 ```bash
-cd presto-map
 npm install
 npm run gtfs:build   # download TTC GTFS + build route-shape index (one-time, ~1 min)
 npm run dev
@@ -26,12 +25,14 @@ To use your own GTFS zip instead of downloading, see `gtfs-data/README.md`.
 
 ## CSV format
 
-The parser expects PRESTO-style rows with:
+The parser accepts PRESTO **Transaction History** exports from [prestocard.ca](https://www.prestocard.ca) and the bundled sample format. Typical columns:
 
-| Date | (optional) | Sequence | Agency | Location | Transaction Type |
-|------|------------|----------|--------|----------|------------------|
+| Date | Transit Agency | Location | Type |
+|------|----------------|----------|------|
 
-Travel rows (`Fare Payment`, `Free Transfer`, `Tap On`, `Tap Off`, etc.) are mapped. Balance loads and other non-travel rows are skipped.
+Dates may include a time (`11/2/2018 11:31:00 AM`) or a day-month-year label (`17 June 2024`). Travel rows (`Fare Payment`, `Free Transfer`, `Tap On`, `Tap Off`, etc.) are mapped. Balance loads and other non-travel rows are skipped.
+
+A **Transit Usage Report** (tax report) has no stop locations and cannot be mapped — export Transaction History instead.
 
 ## How trips work
 
