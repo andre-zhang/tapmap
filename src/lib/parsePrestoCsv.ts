@@ -33,10 +33,19 @@ const MONTHS: Record<string, number> = {
 
 const DATE_HEADERS = ['date', 'transaction date', 'tap date', 'datetime', 'date time']
 const TIME_HEADERS = ['time', 'tap time', 'transaction time']
-const AGENCY_HEADERS = ['agency', 'transit agency', 'operator', 'transit operator']
+const AGENCY_HEADERS = [
+  'agency',
+  'transit agency',
+  'service provider name',
+  'service provider',
+  'provider name',
+  'operator',
+  'transit operator',
+  'provider',
+]
 const LOCATION_HEADERS = ['location', 'stop', 'station', 'stop name', 'tap location', 'stop location']
 const TYPE_HEADERS = ['transaction type', 'type', 'transaction', 'activity', 'desc', 'description']
-const SEQUENCE_HEADERS = ['sequence', 'seq', 'order']
+const SEQUENCE_HEADERS = ['sequence number', 'sequence', 'seq', 'order']
 
 export class PrestoCsvError extends Error {
   constructor(message: string) {
@@ -81,11 +90,19 @@ function findColumn(headers: string[], aliases: string[]): number {
   }
   for (const alias of aliases) {
     const partial = normalized.findIndex(
-      (header) => header === alias || header.startsWith(`${alias} `) || header.endsWith(` ${alias}`),
+      (header) =>
+        header === alias ||
+        header.startsWith(`${alias} `) ||
+        header.endsWith(` ${alias}`) ||
+        (alias.length >= 6 && header.includes(alias)),
     )
     if (partial >= 0) return partial
   }
   return -1
+}
+
+function normalizeMeridiem(value: string): string {
+  return value.replace(/\b([ap])\s*\.?\s*m\.?/gi, (_, letter: string) => `${letter.toUpperCase()}M`)
 }
 
 function parseTime(raw: string | undefined): { h: number; m: number; s: number } | null {
@@ -128,7 +145,7 @@ function finishDate(year: number, month: number, day: number, time: { h: number;
 }
 
 export function parsePrestoDate(raw: string): ParsedDate | null {
-  const label = raw.trim()
+  const label = normalizeMeridiem(raw.trim())
   if (!label) return null
 
   const dayMonthYear = label.match(
@@ -137,7 +154,7 @@ export function parsePrestoDate(raw: string): ParsedDate | null {
   if (dayMonthYear) {
     const month = MONTHS[dayMonthYear[2].toLowerCase()]
     if (month === undefined) return null
-    return finishDate(Number(dayMonthYear[3]), month, Number(dayMonthYear[1]), parseTime(dayMonthYear[4]), label)
+    return finishDate(Number(dayMonthYear[3]), month, Number(dayMonthYear[1]), parseTime(dayMonthYear[4]), raw)
   }
 
   const monthDayYear = label.match(
@@ -146,12 +163,12 @@ export function parsePrestoDate(raw: string): ParsedDate | null {
   if (monthDayYear) {
     const month = MONTHS[monthDayYear[1].toLowerCase()]
     if (month === undefined) return null
-    return finishDate(Number(monthDayYear[3]), month, Number(monthDayYear[2]), parseTime(monthDayYear[4]), label)
+    return finishDate(Number(monthDayYear[3]), month, Number(monthDayYear[2]), parseTime(monthDayYear[4]), raw)
   }
 
   const iso = label.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?)?/)
   if (iso) {
-    return finishDate(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), parseTime(iso[4]), label)
+    return finishDate(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), parseTime(iso[4]), raw)
   }
 
   const slash = label.match(
@@ -159,7 +176,7 @@ export function parsePrestoDate(raw: string): ParsedDate | null {
   )
   if (slash) {
     // PRESTO website exports use US M/D/YYYY.
-    return finishDate(Number(slash[3]), Number(slash[1]) - 1, Number(slash[2]), parseTime(slash[4]), label)
+    return finishDate(Number(slash[3]), Number(slash[1]) - 1, Number(slash[2]), parseTime(slash[4]), raw)
   }
 
   return null
@@ -171,7 +188,9 @@ function isHeaderRow(cells: string[]): boolean {
   const hasDate = headers.some((h) => DATE_HEADERS.includes(h) || h.includes('date'))
   const hasLocation = headers.some((h) => LOCATION_HEADERS.includes(h))
   const hasType = headers.some((h) => TYPE_HEADERS.includes(h) || h.includes('type') || h.includes('transaction'))
-  const hasAgency = headers.some((h) => AGENCY_HEADERS.includes(h) || h.includes('agency'))
+  const hasAgency = headers.some(
+    (h) => AGENCY_HEADERS.includes(h) || h.includes('agency') || h.includes('provider'),
+  )
   return hasDate && (hasLocation || (hasType && hasAgency) || joined.includes('transaction'))
 }
 

@@ -1,21 +1,11 @@
-Date,,Sequence,Agency,Location,Transaction Type
-17 June 2024,,0,Toronto Transit Commission,Union Station,Fare Payment
-17 June 2024,,1,Toronto Transit Commission,DUFFERIN,Free Transfer
-17 June 2024,,2,Toronto Transit Commission,OLD MILL,Free Transfer
-17 June 2024,,3,Toronto Transit Commission,Humber Loop,Free Transfer
-12 June 2024,,0,Toronto Transit Commission,16849,Fare Payment
-12 June 2024,,1,Toronto Transit Commission,Queen St W,Free Transfer
-12 June 2024,,2,Toronto Transit Commission,Leslie St at Eastern Ave,Free Transfer
-12 June 2024,,3,Union Pearson Express,Pearson Station,Tap On
-12 June 2024,,4,Union Pearson Express,Union Station,Tap Off
-3 June 2024,,0,Toronto Transit Commission,TMU Station,Fare Payment
-3 June 2024,,1,Toronto Transit Commission,Bloor Station,Free Transfer
-3 June 2024,,2,Toronto Transit Commission,Pape Ave at Danforth,Free Transfer
-3 June 2024,,3,Toronto Transit Commission,LEASIDE,Free Transfer
-1 June 2024,,0,Toronto Transit Commission,SUNNYBROOK,Fare Payment
-1 June 2024,,1,Toronto Transit Commission,Mount Dennis,Free Transfer
-1 June 2024,,2,PRESTO System,,Load Amount
-27 May 2024,,0,Toronto Transit Commission,Union Station,Fare Payment
-27 May 2024,,1,Toronto Transit Commission,Spadina,Free Transfer
-22 May 2024,,0,Union Pearson Express,Pearson Station,Tap On
-22 May 2024,,1,Union Pearson Express,Mount Dennis,Tap Off Not Required
+Date,Sequence Number,Service Provider Name,Location,Type,Discount Sum,Amount,Balance
+"30 July 2026 11:43 a.m.","0","GO Transit","Union Station Rail","Tap Off","5.76","-$0.27","$12.53"
+"30 July 2026 11:08 a.m.","1","GO Transit","Guildwood GO Station Rail","Tap On","0","$0.66","$12.26"
+"30 July 2026 10:51 a.m.","2","Toronto Transit Commission","Military Trail at Morningside Ave","Fare Payment","0","$3.30","$12.92"
+"17 July 2026 07:07 p.m.","0","Union Pearson Express","Union Station","Tap Off","0","$0.00","$16.22"
+"17 July 2026 06:32 p.m.","1","Union Pearson Express","Pearson Station","Tap On","0","$7.41","$16.22"
+"17 July 2026 01:42 p.m.","2","Union Pearson Express","Pearson Station","Tap Off","0","-$0.09","$23.63"
+"17 July 2026 01:18 p.m.","3","Union Pearson Express","Mount Dennis Station","Tap On","0","$3.39","$23.54"
+"17 July 2026 01:17 p.m.","4","PRESTO System","","Load Amount","0","$25.00","$26.93"
+"10 July 2026 02:34 p.m.","0","Toronto Transit Commission","Eglinton Ave East at Laird Dr East Side","Free Transfer","0","","$1.93"
+"10 July 2026 02:13 p.m.","1","Toronto Transit Commission","EGLINTON STATION","Free Transfer","0","","$1.93"
